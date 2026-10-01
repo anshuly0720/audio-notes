@@ -10,7 +10,8 @@ class Settings(BaseSettings):
     database_url: str
     gnani_api_key: str
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.5-flash"
+    # tried in order; on overload (429/5xx) we move to the next model
+    gemini_models: str = "gemini-3.5-flash,gemini-3.5-flash-lite"
     idle_poll_seconds: float = 30.0
     stale_job_minutes: int = 5
     s3_endpoint: str = ""

@@ -99,3 +99,6 @@ Endpoint: POST https://api.vachana.ai/stt/v3
   Recovered the 108.16 s loss. The 85.19 s loss remains (Batch drops the same sentence → model-side).
 - Decision: keep padding.
 - Final on the same clip: 356 (pause-aligned + padding) vs 341 (Batch) vs 333 (fixed 25 s cuts).
+
+- Gemini free tier: gemini-3.5-flash returned repeated 503s (calls hung 15–28 s) on 2 Oct 00:50.
+  Fix: model fallback chain (flash → flash-lite), 2 tries each, 45 s timeout. Verified working.

@@ -34,9 +34,12 @@ class SummaryError(Exception):
 
 
 async def summarize(transcript: str, language_code: str) -> dict:
+    """Try each configured model in order. Overload (429/5xx/timeout) -> retry once, then fall back
+    to the next model. Any other error (bad key, bad request) fails immediately."""
     s = get_settings()
     if not s.gemini_api_key:
         raise SummaryError("GEMINI_API_KEY is not set")
+    models = [m.strip() for m in s.gemini_models.split(",") if m.strip()]
 
     prompt = PROMPT.format(lang=language_code, transcript=transcript[:MAX_TRANSCRIPT_CHARS])
     payload = {
@@ -44,21 +47,24 @@ async def summarize(transcript: str, language_code: str) -> dict:
         "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
     }
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0)) as client:
-        for attempt in range(3):
-            try:
-                r = await client.post(API.format(model=s.gemini_model),
-                                      headers={"x-goog-api-key": s.gemini_api_key}, json=payload)
-            except httpx.HTTPError as exc:
-                log.warning("gemini network error (try %d): %s", attempt + 1, exc)
-            else:
-                if r.status_code == 200:
-                    return _parse(r.json())
-                if r.status_code not in (429, 500, 502, 503, 504):
-                    raise SummaryError(f"Gemini HTTP {r.status_code}: {r.text[:300]}")
-                log.warning("gemini HTTP %d (try %d)", r.status_code, attempt + 1)
-            await asyncio.sleep(2 ** attempt * 2)
-    raise SummaryError("Gemini kept failing")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
+        for model in models:
+            for attempt in range(2):
+                try:
+                    r = await client.post(API.format(model=model),
+                                          headers={"x-goog-api-key": s.gemini_api_key}, json=payload)
+                except httpx.HTTPError as exc:
+                    log.warning("gemini %s network error/timeout (try %d): %s", model, attempt + 1, exc)
+                else:
+                    if r.status_code == 200:
+                        log.info("summary produced by %s", model)
+                        return _parse(r.json())
+                    if r.status_code not in (429, 500, 502, 503, 504):
+                        raise SummaryError(f"Gemini {model} HTTP {r.status_code}: {r.text[:300]}")
+                    log.warning("gemini %s HTTP %d (try %d)", model, r.status_code, attempt + 1)
+                await asyncio.sleep(2 + attempt * 3)
+            log.warning("gemini %s overloaded, falling back to next model", model)
+    raise SummaryError("All Gemini models are overloaded right now")
 
 
 def _parse(body: dict) -> dict:
