@@ -6,17 +6,17 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from .. import storage
 from ..config import get_settings
 from ..db import get_session
-from ..models import Job, JobKind, Recording, RecordingStatus
+from ..models import JobKind, Recording, RecordingStatus
 from ..schemas import (
     LANGUAGES, CreateRecordingIn, CreateRecordingOut, RecordingDetailOut, RecordingSummaryOut,
 )
+from ..worker.queue import enqueue
 
 log = logging.getLogger("audio-notes.api")
 router = APIRouter(prefix="/api/recordings", tags=["recordings"])
@@ -126,16 +126,11 @@ async def complete_upload(recording_id: uuid.UUID, session: AsyncSession = Depen
         await session.commit()
         return recording
 
-    # Status change + job row in ONE transaction: either both happen or neither
+    # Status change + job row in ONE transaction: either both happen or neither.
+    # enqueue() commits, ignores a duplicate active job, and wakes the worker.
     recording.size_bytes = size
     recording.status = RecordingStatus.QUEUED.value
-    session.add(Job(recording_id=recording.id, kind=JobKind.TRANSCRIBE.value))
-    try:
-        await session.commit()
-    except IntegrityError:
-        # partial unique index: an active transcribe job already exists (concurrent /complete)
-        await session.rollback()
-        recording = await get_recording_or_404(session, recording_id)
+    await enqueue(session, recording.id, JobKind.TRANSCRIBE)
 
     log.info("recording %s queued (%d bytes)", recording.id, size)
     return recording

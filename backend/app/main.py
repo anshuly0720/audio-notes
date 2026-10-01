@@ -10,6 +10,10 @@ from .config import get_settings
 from .db import engine
 from .api.recordings import router as recordings_router
 
+import asyncio
+from .worker import queue as job_queue
+from .worker.runner import worker_loop
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("audio-notes")
 settings = get_settings()
@@ -17,9 +21,23 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Fail loudly at startup if ffmpeg is missing: the worker cannot cut audio without it
     log.info("ffmpeg found at: %s", shutil.which("ffmpeg") or "NOT FOUND")
+    stop = asyncio.Event()
+    task = None
+    if settings.embed_worker:
+        # Free tier has no separate worker service, so the worker runs inside the API process.
+        task = asyncio.create_task(worker_loop(stop))
     yield
+    stop.set()
+    job_queue.wake.set()
+    if task:
+        # Progress is checkpointed per part, so we don't wait for the job to finish:
+        # cancel now; the job keeps its stale lock and the reaper requeues it on next start.
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await engine.dispose()
 
 

@@ -10,7 +10,9 @@ class Settings(BaseSettings):
     database_url: str
     gnani_api_key: str
     gemini_api_key: str = ""
-
+    gemini_model: str = "gemini-3.5-flash"
+    idle_poll_seconds: float = 30.0
+    stale_job_minutes: int = 5
     s3_endpoint: str = ""
     s3_key_id: str = ""
     s3_secret: str = ""
