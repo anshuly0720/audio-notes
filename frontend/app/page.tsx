@@ -1,39 +1,20 @@
-"use client";
-
-import { useEffect, useState } from "react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-type Status = "checking" | "ok" | "error";
+import Link from "next/link";
+import UploadForm from "@/components/UploadForm";
 
 export default function Home() {
-  const [api, setApi] = useState<Status>("checking");
-  const [db, setDb] = useState<Status>("checking");
-  const [detail, setDetail] = useState("");
-
-  useEffect(() => {
-    // Hit one endpoint and record ok/error. A network failure (server asleep, CORS) lands in catch.
-    async function check(path: string, set: (s: Status) => void) {
-      try {
-        const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
-        set(res.ok ? "ok" : "error");
-        if (!res.ok) setDetail(`${path} returned HTTP ${res.status}`);
-      } catch (err) {
-        set("error");
-        setDetail(`${path}: ${String(err)}`);
-      }
-    }
-    // liveness first, then the database
-    check("/api/health", setApi).then(() => check("/api/health/db", setDb));
-  }, []);
-
   return (
-    <main className="mx-auto max-w-xl p-8 space-y-4">
-      <h1 className="text-2xl font-semibold">Audio Notes</h1>
-      <p>API: <strong>{api}</strong></p>
-      <p>Database: <strong>{db}</strong></p>
-      <p className="text-sm text-gray-500">API URL: {API_URL}</p>
-      {detail && <p className="text-sm text-red-600">{detail}</p>}
+    <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
+      <header className="flex items-baseline justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Audio Notes</h1>
+          <p className="text-zinc-600 dark:text-zinc-400">Upload audio, get a transcript and a summary.</p>
+        </div>
+        <Link href="/architecture" className="text-sm underline">How it works</Link>
+      </header>
+
+      <UploadForm />
+
+      {/* history list comes in checkbox 3 */}
     </main>
   );
 }
