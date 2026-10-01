@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from .config import get_settings
 from .db import engine
+from .api.recordings import router as recordings_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("audio-notes")
@@ -30,7 +31,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+app.include_router(recordings_router)
 
 @app.get("/api/health")
 async def health():

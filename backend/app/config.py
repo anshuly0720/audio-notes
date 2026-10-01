@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Demo caps to protect the free credits (~₹0.43 per audio minute)
     max_upload_mb: int = 500
     max_audio_minutes: int = 60
+    upload_limit_per_hour: int = 10  # per client IP, protects ASR credits
 
     @property
     def cors_origin_list(self) -> list[str]:
