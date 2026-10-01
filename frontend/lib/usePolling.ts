@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 export function usePolling<T>(fetcher: () => Promise<T>, isDone: (data: T) => boolean) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [run, setRun] = useState(0); // bump to restart polling (e.g. after a retry)
 
   // keep the latest callbacks without restarting the effect on every render
   const fetcherRef = useRef(fetcher);
@@ -54,7 +55,7 @@ export function usePolling<T>(fetcher: () => Promise<T>, isDone: (data: T) => bo
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, []);
+  }, [run]);
 
-  return { data, error };
+    return { data, error, restart: () => setRun((n) => n + 1) };
 }

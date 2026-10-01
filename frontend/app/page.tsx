@@ -1,6 +1,6 @@
 import Link from "next/link";
 import UploadForm from "@/components/UploadForm";
-
+import RecordingList from "@/components/RecordingList";
 export default function Home() {
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
@@ -13,8 +13,7 @@ export default function Home() {
       </header>
 
       <UploadForm />
-
-      {/* history list comes in checkbox 3 */}
+      <RecordingList/>
     </main>
   );
 }

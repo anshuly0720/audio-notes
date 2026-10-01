@@ -118,6 +118,9 @@ export const getRecording = (id: string) => request<RecordingDetail>(`/api/recor
 
 export const getAudioUrl = (id: string) => request<{ url: string }>(`/api/recordings/${id}/audio`);
 
+export const retryRecording = (id: string) =>
+  request<RecordingSummary>(`/api/recordings/${id}/retry`, { method: "POST" });
+
 // ---------- direct-to-bucket upload ----------
 /**
  * PUT the file straight to the bucket using the presigned URL.

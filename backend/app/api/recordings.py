@@ -157,3 +157,38 @@ async def get_recording(recording_id: uuid.UUID, session: AsyncSession = Depends
 async def get_audio_url(recording_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
     recording = await get_recording_or_404(session, recording_id)
     return {"url": storage.presign_get(recording.storage_key, expires=3600), "expires_in": 3600}
+
+# Errors where retrying the same file can't help: the user needs a different file
+NOT_RETRYABLE = {"DECODE_FAILED", "NO_AUDIO_STREAM", "TOO_LONG", "FILE_TOO_LARGE", "NO_SPEECH"}
+
+
+@router.post("/{recording_id}/retry", response_model=RecordingSummaryOut, status_code=202)
+async def retry_recording(recording_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+    """Retry whatever failed: failed parts (re-runs transcription, done parts are skipped)
+    or just the summary. Never redoes work that already succeeded."""
+    recording = await get_recording_or_404(session, recording_id, with_chunks=True)
+
+    if recording.status in (RecordingStatus.QUEUED.value, RecordingStatus.PROCESSING.value):
+        return recording  # already in progress: idempotent
+
+    if recording.error_code in NOT_RETRYABLE:
+        raise api_error(409, "NOT_RETRYABLE", "This file can't be processed. Please upload a different file.")
+
+    has_failed_parts = any(c.status == "failed" for c in recording.chunks)
+    transcription_failed = recording.status == RecordingStatus.FAILED.value
+
+    if has_failed_parts or transcription_failed:
+        for c in recording.chunks:
+            if c.status == "failed":
+                c.status, c.last_error, c.attempts = "pending", None, 0
+        recording.status, recording.stage = RecordingStatus.QUEUED.value, None
+        recording.error_code = recording.error_message = None
+        await enqueue(session, recording.id, JobKind.TRANSCRIBE)
+    elif recording.summary_status == "failed":
+        recording.status, recording.stage = RecordingStatus.PROCESSING.value, "summarizing"
+        recording.summary_status = "pending"
+        await enqueue(session, recording.id, JobKind.SUMMARIZE)
+    else:
+        raise api_error(409, "NOTHING_TO_RETRY", "There's nothing to retry for this recording.")
+
+    return recording

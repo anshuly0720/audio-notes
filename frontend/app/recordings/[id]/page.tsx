@@ -4,11 +4,15 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  ApiError, LANGUAGES, RecordingDetail, formatBytes, formatDuration, getAudioUrl, getRecording,
+  ApiError, LANGUAGES, RecordingDetail, formatBytes, formatDuration, getAudioUrl, getRecording, retryRecording,
 } from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
 
+
 const STEPS = ["Uploaded", "Checking audio", "Splitting", "Transcribing", "Writing summary", "Done"];
+
+// Errors where retrying the same file can't help (mirrors NOT_RETRYABLE in the backend)
+const NEEDS_NEW_FILE = ["DECODE_FAILED", "NO_AUDIO_STREAM", "TOO_LONG", "FILE_TOO_LARGE", "NO_SPEECH"];
 
 /** Which step is active, derived from status + stage. */
 function activeStep(r: RecordingDetail): number {
@@ -61,7 +65,7 @@ function useElapsed(from: string | undefined, until: string | null | undefined, 
 
 export default function RecordingPage() {
   const { id } = useParams<{ id: string }>();
-  const { data: rec, error } = usePolling(
+  const { data: rec, error, restart } = usePolling(
     () => getRecording(id),
     (r) => r.status === "completed" || r.status === "failed",
   );
@@ -78,6 +82,31 @@ export default function RecordingPage() {
   }, [id, exists]);
 
   const [copied, setCopied] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  async function retry() {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      await retryRecording(id);
+      restart(); // polling had stopped on the terminal state
+    } catch (err) {
+      setRetryError(err instanceof ApiError ? err.message : "Retry failed. Please try again.");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  const retryButton = (label: string) => (
+    <button
+      onClick={retry}
+      disabled={retrying}
+      className="mt-2 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+    >
+      {retrying ? "Retrying…" : label}
+    </button>
+  );
 
   // ---------- states before we have data ----------
   if (!rec) {
@@ -101,7 +130,6 @@ export default function RecordingPage() {
   const step = activeStep(rec);
   const language = LANGUAGES.find((l) => l.code === rec.language_code)?.label ?? rec.language_code;
   const percent = rec.chunks_total ? Math.round((rec.chunks_done / rec.chunks_total) * 100) : 0;
-  const failedParts = rec.chunks.filter((c) => c.status === "failed").length;
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-10">
@@ -148,19 +176,28 @@ export default function RecordingPage() {
         </section>
       )}
 
-      {/* ---------- errors ---------- */}
+      {/* ---------- failed: say why, and offer the right next action ---------- */}
       {rec.status === "failed" && (
         <section className="rounded-xl border border-red-300 bg-red-50 p-5 dark:border-red-900 dark:bg-red-950/30">
           <h2 className="font-semibold text-red-800 dark:text-red-200">We couldn&apos;t process this recording</h2>
           <p className="mt-1 text-sm text-red-700 dark:text-red-300">{rec.error_message}</p>
           <p className="mt-1 text-xs text-red-600/70">Error code: {rec.error_code}</p>
-          <Link href="/" className="mt-3 inline-block text-sm underline">Upload another file</Link>
+          {NEEDS_NEW_FILE.includes(rec.error_code ?? "") ? (
+            <Link href="/" className="mt-3 inline-block text-sm underline">Upload a different file</Link>
+          ) : (
+            retryButton("Try again")
+          )}
+          {retryError && <p className="mt-2 text-sm text-red-700">{retryError}</p>}
         </section>
       )}
-      {rec.error_code === "PARTIAL_TRANSCRIPT" && (
-        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-          {rec.error_message}
-        </p>
+
+      {/* ---------- some parts failed: transcript is shown, failed parts can be retried alone ---------- */}
+      {rec.error_code === "PARTIAL_TRANSCRIPT" && rec.status === "completed" && (
+        <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          <p>{rec.error_message}</p>
+          {retryButton("Retry failed parts")}
+          {retryError && <p className="mt-1">{retryError}</p>}
+        </div>
       )}
 
       {audioUrl && <audio controls src={audioUrl} className="w-full" />}
@@ -190,9 +227,11 @@ export default function RecordingPage() {
           </div>
         )}
         {rec.summary_status === "failed" && (
-          <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-            The summary service was unavailable. Your transcript is below.
-          </p>
+          <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            <p>The summary service was unavailable. Your transcript is below.</p>
+            {retryButton("Retry summary")}
+            {retryError && <p className="mt-1">{retryError}</p>}
+          </div>
         )}
         {rec.summary_status === "skipped" && (
           <p className="text-sm text-zinc-500">Too little speech to summarize.</p>
@@ -242,9 +281,6 @@ export default function RecordingPage() {
               </li>
             ))}
           </ol>
-        )}
-        {failedParts > 0 && (
-          <p className="text-sm text-zinc-500">{failedParts} part(s) failed. A retry button comes in the next step.</p>
         )}
       </section>
     </main>
