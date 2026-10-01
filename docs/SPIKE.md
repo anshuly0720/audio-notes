@@ -49,7 +49,7 @@ Endpoint: POST https://api.vachana.ai/stt/v3
   backoff (1 s, 2 s, 4 s + jitter). 1 h audio ≈ 144 parts ≈ 2.5–3 min.
 
 
-## Batch API (checkbox 4)
+
 ## Batch API (checkbox 4)
 - Rate limit (~1 req/s) applies to Batch endpoints too: create→start back-to-back
   gave 429. Client needs pacing (≥1.1 s) + 429 retry everywhere.
@@ -88,3 +88,14 @@ Endpoint: POST https://api.vachana.ai/stt/v3
 - Chunked losses cluster at the fixed cut boundaries → caused by cutting mid-word.
 - Fix: cut only inside pauses (silencedetect) → planner tested on this clip on Day 1.
   Success = more words than Batch (341), no drops at boundaries.
+
+## Pause-aligned parts (Day 1)
+- Planner (ffmpeg silencedetect -35 dB, ≥0.3 s; cut in the longest pause 10–27 s into a part,
+  else hard cut): 90 pauses found on the 3 min clip.
+- Without padding: 8 parts of 11–28 s → 352 words.
+  Recovered 3 of 4 fixed-cut losses and the "second is speed" area Batch dropped.
+  Remaining losses sat exactly at 2 cut points (85.19 s, 108.16 s) → ASR drops speech at clip edges.
+- With 0.3 s silence padding on each side (MAX_PART_SEC 27): 9 parts → 356 words.
+  Recovered the 108.16 s loss. The 85.19 s loss remains (Batch drops the same sentence → model-side).
+- Decision: keep padding.
+- Final on the same clip: 356 (pause-aligned + padding) vs 341 (Batch) vs 333 (fixed 25 s cuts).
