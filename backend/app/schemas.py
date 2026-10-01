@@ -34,6 +34,8 @@ class ChunkOut(BaseModel):
     end_sec: float
     status: str
     text: str | None
+    attempts: int
+    last_error: str | None  # e.g. "retrying (try 2) after ASR_RATE_LIMITED"
 
 
 class RecordingSummaryOut(BaseModel):
