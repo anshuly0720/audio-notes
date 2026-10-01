@@ -24,6 +24,8 @@ export type Chunk = {
   end_sec: number;
   status: "pending" | "done" | "failed";
   text: string | null;
+  attempts: number;
+  last_error: string | null; // e.g. "retrying (try 2) after ASR_RATE_LIMITED"
 };
 
 export type Summary = {
