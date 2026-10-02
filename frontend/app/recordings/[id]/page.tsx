@@ -136,7 +136,7 @@ export default function RecordingPage() {
       <Link href="/" className="text-sm underline">← All recordings</Link>
 
       <header>
-        <h1 className="break-words text-2xl font-semibold">{rec.summary?.title || rec.filename}</h1>
+        <h1 className="wrap-break-word text-2xl font-semibold">{rec.summary?.title || rec.filename}</h1>
         <p className="text-sm text-zinc-500">
           {rec.filename} · {language} · {formatDuration(rec.duration_sec)} · {formatBytes(rec.size_bytes)}
         </p>
