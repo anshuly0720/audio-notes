@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "How it works · Audio Notes" };
+export const metadata = { title: "How it works" };
 
 const GITHUB_URL = "https://github.com/anshuly0720/audio-notes";
 
